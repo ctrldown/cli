@@ -119,9 +119,8 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 			}
 
 			if variant == "Feature" && accessMethod == "Local" {
-				sourcePath := localPath
+				sourcePath := filepath.Join(localPath, "environments", "local")
 
-				
 				destPath := "."
 				if targetLocation == "new_dir" {
 					destPath = title
