@@ -2,7 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -25,6 +25,16 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 			var accessMethod string
 			var localPath string
 			var targetLocation string
+
+			var examplePath string
+			switch runtime.GOOS {
+			case "windows":
+				examplePath = `C:\path\to\boilerplates\environments\local`
+			case "darwin":
+				examplePath = `/Users/username/path/to/boilerplates/environments/local`
+			default:
+				examplePath = `/home/username/path/to/boilerplates/environments/local`
+			}
 
 			form := huh.NewForm(
 				huh.NewGroup(
@@ -85,7 +95,8 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 				localForm := huh.NewForm(
 					huh.NewGroup(
 						huh.NewInput().
-							Title("Enter the local boilerplate directory path:").
+							Title("Enter the exact local boilerplate directory path:").
+							Placeholder(examplePath).
 							Value(&localPath).
 							Validate(func(s string) error {
 								if len(s) == 0 {
@@ -107,7 +118,8 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 			}
 
 			if variant == "Feature" && accessMethod == "Local" {
-				sourcePath := filepath.Join(localPath, "boilerplates", "environments", "local")
+				sourcePath := localPath
+
 				
 				destPath := "."
 				if targetLocation == "new_dir" {
