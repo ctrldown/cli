@@ -128,12 +128,31 @@ func NewInstallCmd(fileSystem fs.FS) *cobra.Command {
 				selectedMixins = append(selectedMixins, mixinsMap[mk])
 			}
 
-			// 5. Execute Installation
+			// 5. Ask for Destination Folder Name
+			var componentName string
+			err = huh.NewForm(
+				huh.NewGroup(
+					huh.NewInput().
+						Title("Enter the name for the new component (this will be the folder name):").
+						Value(&componentName).
+						Validate(func(s string) error {
+							if len(s) == 0 {
+								return fmt.Errorf("component name is required")
+							}
+							return nil
+						}),
+				),
+			).Run()
+			if err != nil {
+				return err
+			}
+
+			// 6. Execute Installation
 			action := func() {
 				err = engine.InstallComponent(
 					fileSystem, 
 					ctrlConf.BoilerplatePath, 
-					".", 
+					componentName, 
 					selectedTemplate, 
 					selectedMixins, 
 					bpConf.Hooks,
@@ -142,7 +161,7 @@ func NewInstallCmd(fileSystem fs.FS) *cobra.Command {
 			}
 
 			_ = spinner.New().
-				Title("Installing component and injecting mixins...").
+				Title(fmt.Sprintf("Installing %s...", componentName)).
 				Action(action).
 				Run()
 
@@ -151,7 +170,7 @@ func NewInstallCmd(fileSystem fs.FS) *cobra.Command {
 			}
 
 			successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-			fmt.Println(successStyle.Render(fmt.Sprintf("✓ Successfully installed %s!", selectedTemplate.Title)))
+			fmt.Println(successStyle.Render(fmt.Sprintf("✓ Successfully installed %s into './%s'!", selectedTemplate.Title, componentName)))
 
 			return nil
 		},
