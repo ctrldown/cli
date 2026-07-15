@@ -41,7 +41,19 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 							}
 							return nil
 						}),
+				),
 
+				huh.NewGroup(
+					huh.NewSelect[string]().
+						Title("Where should the boilerplate be copied?").
+						Options(
+							huh.NewOption("Current Directory (.)", "current"),
+							huh.NewOption("New directory named after title", "new_dir"),
+						).
+						Value(&targetLocation),
+				),
+
+				huh.NewGroup(
 					huh.NewInput().
 						Title("Give it a title:").
 						Value(&title).
@@ -51,15 +63,9 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 							}
 							return nil
 						}),
+				),
 
-					huh.NewSelect[string]().
-						Title("Where should the boilerplate be copied?").
-						Options(
-							huh.NewOption("Current Directory (.)", "current"),
-							huh.NewOption("New directory named after title", "new_dir"),
-						).
-						Value(&targetLocation),
-
+				huh.NewGroup(
 					huh.NewSelect[string]().
 						Title("How do you want to access the Boilerplate System?").
 						Options(
