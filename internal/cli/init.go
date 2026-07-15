@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -141,8 +142,13 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 					return fmt.Errorf("failed to initialize feature: %w", err)
 				}
 
+				absDestPath, pathErr := filepath.Abs(destPath)
+				if pathErr != nil {
+					absDestPath = destPath
+				}
+
 				successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-				fmt.Println(successStyle.Render(fmt.Sprintf("✓ Successfully initialized feature '%s' in %s", title, destPath)))
+				fmt.Println(successStyle.Render(fmt.Sprintf("✓ Successfully initialized feature '%s' in %s", title, absDestPath)))
 			}
 
 			return nil
