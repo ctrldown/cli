@@ -31,6 +31,7 @@ func NewRootCmd(fileSystem fs.FS) *cobra.Command {
 
 	// Register subcommands
 	cmd.AddCommand(NewInitCmd(fileSystem))
+	cmd.AddCommand(NewInstallCmd(fileSystem))
 
 	return cmd
 }

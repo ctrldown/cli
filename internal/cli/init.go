@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/huh/spinner"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"ctrldown/cli/internal/engine"
 	"ctrldown/cli/internal/fs"
@@ -145,6 +146,10 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 				if pathErr != nil {
 					absDestPath = destPath
 				}
+
+				// Create .ctrl.yaml configuration file
+				ctrlConfig := fmt.Sprintf("boilerplate_path: \"%s\"\nvariant: \"%s\"\ntitle: \"%s\"\n", localPath, variant, title)
+				_ = afero.WriteFile(fileSystem, filepath.Join(absDestPath, ".ctrl.yaml"), []byte(ctrlConfig), 0644)
 
 				successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
 				fmt.Println(successStyle.Render(fmt.Sprintf("✓ Successfully initialized feature '%s' in %s", title, absDestPath)))
