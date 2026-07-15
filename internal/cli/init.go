@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/huh"
@@ -147,9 +148,27 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 					absDestPath = destPath
 				}
 
-				// Create .ctrl.yaml configuration file
-				ctrlConfig := fmt.Sprintf("boilerplate_path: \"%s\"\nvariant: \"%s\"\ntitle: \"%s\"\n", localPath, variant, title)
-				_ = afero.WriteFile(fileSystem, filepath.Join(absDestPath, ".ctrl.yaml"), []byte(ctrlConfig), 0644)
+				// Resolve absolute path for the boilerplates to prevent "Not Found" errors in install
+				absLocalPath, pathErr := filepath.Abs(localPath)
+				if pathErr != nil {
+					absLocalPath = localPath
+				}
+
+				// Create decorated ctrl.yaml configuration file
+				ctrlConfig := fmt.Sprintf(`# ========================================================
+# CTRLDOWN CONFIGURATION FILE
+# ========================================================
+# This file contains the local project context for ctrldown.
+# Do not modify the boilerplate_path unless necessary.
+
+boilerplate_path: "%s"
+
+project:
+  variant: "%s"
+  title: "%s"
+  created_at: "%s"
+`, strings.ReplaceAll(absLocalPath, "\\", "\\\\"), variant, title, time.Now().Format(time.RFC3339))
+				_ = afero.WriteFile(fileSystem, filepath.Join(absDestPath, "ctrl.yaml"), []byte(ctrlConfig), 0644)
 
 				successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
 				fmt.Println(successStyle.Render(fmt.Sprintf("✓ Successfully initialized feature '%s' in %s", title, absDestPath)))

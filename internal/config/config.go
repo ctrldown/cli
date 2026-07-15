@@ -8,9 +8,14 @@ import (
 )
 
 type CtrlConfig struct {
-	BoilerplatePath string `mapstructure:"boilerplate_path"`
-	Variant         string `mapstructure:"variant"`
-	Title           string `mapstructure:"title"`
+	BoilerplatePath string        `mapstructure:"boilerplate_path"`
+	Project         ProjectConfig `mapstructure:"project"`
+}
+
+type ProjectConfig struct {
+	Variant   string `mapstructure:"variant"`
+	Title     string `mapstructure:"title"`
+	CreatedAt string `mapstructure:"created_at"`
 }
 
 type TemplateDef struct {
@@ -37,12 +42,12 @@ type BoilerplateConfig struct {
 func LoadCtrlConfig(fs afero.Fs, workDir string) (*CtrlConfig, error) {
 	v := viper.New()
 	v.SetFs(fs)
-	v.SetConfigName(".ctrl")
+	v.SetConfigName("ctrl")
 	v.SetConfigType("yaml")
 	v.AddConfigPath(workDir)
 
 	if err := v.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("failed to read .ctrl.yaml (are you in a ctrldown initialized project?): %w", err)
+		return nil, fmt.Errorf("failed to read ctrl.yaml (are you in a ctrldown initialized project?): %w", err)
 	}
 
 	var conf CtrlConfig
