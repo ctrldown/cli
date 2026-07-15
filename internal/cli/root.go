@@ -29,13 +29,8 @@ func NewRootCmd(fileSystem fs.FS) *cobra.Command {
 	// Persistent flags (available to all subcommands)
 	cmd.PersistentFlags().BoolVar(&globals.Debug, "debug", false, "Enable debug output and stack traces")
 
-	// Store globals in annotations or simply pass them down to subcommands when creating them.
-	// For now, if we had subcommands, we would pass 'fileSystem' and '&globals' to their constructors.
-	// Example:
-	// cmd.AddCommand(NewInitCmd(fileSystem, &globals))
-
-	// Example usage of the injected file system in a hypothetical subcommand or logic:
-	// _ = fileSystem.MkdirAll("example", 0755)
+	// Register subcommands
+	cmd.AddCommand(NewInitCmd(fileSystem))
 
 	return cmd
 }
