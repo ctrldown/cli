@@ -30,11 +30,11 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 			var examplePath string
 			switch runtime.GOOS {
 			case "windows":
-				examplePath = `C:\path\to\boilerplates\environments\local`
+				examplePath = `C:\path\to\boilerplates`
 			case "darwin":
-				examplePath = `/Users/username/path/to/boilerplates/environments/local`
+				examplePath = `/Users/username/path/to/boilerplates`
 			default:
-				examplePath = `/home/username/path/to/boilerplates/environments/local`
+				examplePath = `/home/username/path/to/boilerplates`
 			}
 
 			form := huh.NewForm(
