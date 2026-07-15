@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dave/dst/decorator"
 	"github.com/spf13/afero"
@@ -50,6 +51,46 @@ func InjectGoAST(fs afero.Fs, baseFilePath string, mixinFilePath string) error {
 	// Restore modified AST back to base file
 	if err := decorator.Fprint(f, baseAST); err != nil {
 		return fmt.Errorf("could not write AST to base file %s: %w", baseFilePath, err)
+	}
+
+	return nil
+}
+
+// InjectTSImport reads a mixin TS/TSX file, extracts all import statements,
+// and prepends them to the base TS/TSX file.
+func InjectTSImport(fs afero.Fs, baseFilePath string, mixinFilePath string) error {
+	baseBytes, err := afero.ReadFile(fs, baseFilePath)
+	if err != nil {
+		return fmt.Errorf("could not read base TS file %s: %w", baseFilePath, err)
+	}
+
+	mixinBytes, err := afero.ReadFile(fs, mixinFilePath)
+	if err != nil {
+		return fmt.Errorf("could not read mixin TS file %s: %w", mixinFilePath, err)
+	}
+
+	mixinContent := string(mixinBytes)
+	lines := strings.Split(mixinContent, "\n")
+	
+	var imports []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "import ") {
+			imports = append(imports, line)
+		}
+	}
+
+	if len(imports) == 0 {
+		return nil // Nothing to inject
+	}
+
+	importsStr := strings.Join(imports, "\n") + "\n"
+	
+	// Prepend imports to the base file
+	newBaseContent := importsStr + string(baseBytes)
+
+	if err := afero.WriteFile(fs, baseFilePath, []byte(newBaseContent), 0644); err != nil {
+		return fmt.Errorf("could not write injected TS file %s: %w", baseFilePath, err)
 	}
 
 	return nil

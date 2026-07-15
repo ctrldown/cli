@@ -47,17 +47,28 @@ func InstallComponent(
 
 			destFile := filepath.Join(targetPath, relPath)
 
-			// If it's a .mixin file, we trigger AST injection instead of raw copy
+			// If it's a .mixin file, we trigger the appropriate injection/merge strategy
 			if strings.HasSuffix(info.Name(), ".mixin") {
 				// Base file is the destFile without the .mixin extension
 				baseFile := strings.TrimSuffix(destFile, ".mixin")
 				
-				// Apply AST Logic (we only implement Go AST for now via injector.go)
-				if template.Language == "go" {
+				if strings.HasSuffix(baseFile, ".json") {
+					if err := MergeJSON(fs, baseFile, path); err != nil {
+						return fmt.Errorf("failed to deep merge JSON for %s: %w", baseFile, err)
+					}
+				} else if strings.HasSuffix(baseFile, ".go") {
 					if err := InjectGoAST(fs, baseFile, path); err != nil {
 						return fmt.Errorf("failed to inject AST for %s: %w", baseFile, err)
 					}
+				} else if strings.HasSuffix(baseFile, ".ts") || strings.HasSuffix(baseFile, ".tsx") {
+					if err := InjectTSImport(fs, baseFile, path); err != nil {
+						return fmt.Errorf("failed to inject TS import for %s: %w", baseFile, err)
+					}
+				} else {
+					// Fallback for unknown mixin types
+					return copyFile(fs, path, destFile)
 				}
+				
 				return nil
 			}
 
