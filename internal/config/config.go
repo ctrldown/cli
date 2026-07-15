@@ -33,10 +33,10 @@ type MixinDef struct {
 }
 
 type BoilerplateConfig struct {
-	Environment map[string]string         `mapstructure:"environment"`
-	Hooks       map[string][]string       `mapstructure:"hooks"`
-	Templates   map[string]map[string]TemplateDef
-	Mixins      map[string]map[string]MixinDef
+	Environment map[string]string                 `mapstructure:"environment"`
+	Hooks       map[string][]string               `mapstructure:"hooks"`
+	Templates   map[string]map[string]TemplateDef `mapstructure:"-"`
+	Mixins      map[string]map[string]MixinDef    `mapstructure:"-"`
 }
 
 func LoadCtrlConfig(fs afero.Fs, workDir string) (*CtrlConfig, error) {
