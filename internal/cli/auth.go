@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -30,11 +28,9 @@ func openBrowser(url string) {
 	_ = cmd.Start()
 }
 
-// NewLoginCmd creates the login command for authenticating with the Ctrldown Cloudflare Edge service.
 func NewLoginCmd(fileSystem fs.FS) *cobra.Command {
 	var (
 		token        string
-		code         string
 		email        string
 		tier         string
 		entitlements []string
@@ -73,24 +69,7 @@ and entitlements in ~/.ctrldown/credentials.yaml.`,
 				return nil
 			}
 
-			// 2. Direct 6-digit Code Flag
-			if code != "" {
-				creds, err := auth.PollUserCodeToken(endpoint, code)
-				if err != nil {
-					return fmt.Errorf("verification failed: %w", err)
-				}
-				if creds == nil {
-					return fmt.Errorf("code '%s' is not approved yet. Please approve in browser first", code)
-				}
-				if err := auth.SaveCredentials(fileSystem, creds); err != nil {
-					return fmt.Errorf("failed to save credentials: %w", err)
-				}
-				okStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-				fmt.Println(okStyle.Render(fmt.Sprintf("✓ Logged in as %s [Tier: %s]", creds.Email, strings.ToUpper(creds.Tier))))
-				return nil
-			}
-
-			// 3. Browser Grant Flow (Standard Interactive Login)
+			// 2. Browser Grant Flow (Standard Interactive Login)
 			grant, err := auth.RequestDeviceGrant(endpoint)
 			if err != nil {
 				// Fallback to manual form if endpoint offline or unreachable
@@ -154,7 +133,6 @@ and entitlements in ~/.ctrldown/credentials.yaml.`,
 
 			titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
 			linkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#38BDF8")).Underline(true)
-			codeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FCD34D")).Bold(true)
 			dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#64748B"))
 
 			fmt.Println()
@@ -162,21 +140,12 @@ and entitlements in ~/.ctrldown/credentials.yaml.`,
 			fmt.Println("To authenticate, authorize your CLI in the browser:")
 			fmt.Println("👉  " + linkStyle.Render(grant.VerificationURI))
 			fmt.Println()
-			fmt.Println("Verification Code: " + codeStyle.Render(grant.UserCode))
-			fmt.Println(dimStyle.Render("Attempting to open browser automatically..."))
-			fmt.Println(dimStyle.Render("Waiting for authorization (press Enter to type 6-digit code manually)..."))
+			fmt.Println(dimStyle.Render("Opening browser automatically..."))
+			fmt.Println(dimStyle.Render("Waiting for authorization in browser..."))
 			fmt.Println()
 
 			// Open browser in background
 			openBrowser(grant.VerificationURI)
-
-			// Non-blocking manual code input channel
-			inputChan := make(chan string, 1)
-			go func() {
-				reader := bufio.NewReader(os.Stdin)
-				line, _ := reader.ReadString('\n')
-				inputChan <- strings.TrimSpace(line)
-			}()
 
 			pollInterval := time.Duration(grant.Interval) * time.Second
 			if pollInterval < time.Second {
@@ -188,29 +157,6 @@ and entitlements in ~/.ctrldown/credentials.yaml.`,
 
 			for {
 				select {
-				case manualInput := <-inputChan:
-					manualInput = strings.TrimSpace(manualInput)
-					if manualInput == "" {
-						// User pressed enter without typing code, prompt for code
-						fmt.Print("Enter 6-digit code from browser: ")
-						reader := bufio.NewReader(os.Stdin)
-						manualInput, _ = reader.ReadString('\n')
-						manualInput = strings.TrimSpace(manualInput)
-					}
-					if manualInput != "" {
-						fmt.Printf("Verifying code [%s]...\n", manualInput)
-						creds, err := auth.PollUserCodeToken(endpoint, manualInput)
-						if err == nil && creds != nil {
-							if err := auth.SaveCredentials(fileSystem, creds); err != nil {
-								return fmt.Errorf("failed to save credentials: %w", err)
-							}
-							okStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
-							fmt.Println()
-							fmt.Println(okStyle.Render(fmt.Sprintf("✓ Successfully authenticated as %s [Tier: %s]", creds.Email, strings.ToUpper(creds.Tier))))
-							return nil
-						}
-						fmt.Println(dimStyle.Render("Code not approved yet. Continuing to wait for browser..."))
-					}
 				case <-ticker.C:
 					creds, err := auth.PollDeviceToken(endpoint, grant.DeviceCode)
 					if err == nil && creds != nil {
@@ -230,7 +176,6 @@ and entitlements in ~/.ctrldown/credentials.yaml.`,
 	}
 
 	cmd.Flags().StringVar(&token, "token", "", "Ctrldown Cloudflare Edge API access token (headless/CI)")
-	cmd.Flags().StringVar(&code, "code", "", "6-digit manual authorization code from console.ctrldown.com")
 	cmd.Flags().StringVar(&email, "email", "", "Account email address (when using --token)")
 	cmd.Flags().StringVar(&tier, "tier", "", "Account license tier (free, pro, enterprise)")
 	cmd.Flags().StringSliceVar(&entitlements, "entitlements", nil, "Explicit feature IDs unlocked for this token")
