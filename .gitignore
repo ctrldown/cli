@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-ctrldown
-ctrldown_*
+/ctrldown
+/ctrldown_*
 
 # GoReleaser & release build outputs
 dist/
