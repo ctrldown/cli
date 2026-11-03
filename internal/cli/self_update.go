@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -29,7 +30,9 @@ type githubRelease struct {
 }
 
 type githubAsset struct {
+	ID                 int64  `json:"id"`
 	Name               string `json:"name"`
+	URL                string `json:"url"`
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
@@ -169,6 +172,23 @@ func MatchReleaseAsset(assets []githubAsset, goos, goarch string) (githubAsset, 
 	return githubAsset{}, false
 }
 
+func getGitHubAuthToken() string {
+	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+		return t
+	}
+	if t := os.Getenv("GH_TOKEN"); t != "" {
+		return t
+	}
+	// Try gh CLI if installed
+	if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+		tok := strings.TrimSpace(string(out))
+		if tok != "" {
+			return tok
+		}
+	}
+	return ""
+}
+
 func fetchLatestGitHubRelease(repo string) (*githubRelease, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
 	client := &http.Client{Timeout: 15 * time.Second}
@@ -178,7 +198,7 @@ func fetchLatestGitHubRelease(repo string) (*githubRelease, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "ctrldown-cli/"+config.Version)
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	if token := getGitHubAuthToken(); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -200,13 +220,33 @@ func fetchLatestGitHubRelease(repo string) (*githubRelease, error) {
 }
 
 func downloadReleaseBinary(asset githubAsset) ([]byte, error) {
-	client := &http.Client{Timeout: 120 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, asset.BrowserDownloadURL, nil)
+	token := getGitHubAuthToken()
+	downloadURL := asset.URL
+	if downloadURL == "" || token == "" {
+		downloadURL = asset.BrowserDownloadURL
+	}
+
+	client := &http.Client{
+		Timeout: 120 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			// If redirected to S3 or a different domain, strip Authorization to prevent S3 auth rejection
+			if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+				req.Header.Del("Authorization")
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequest(http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "ctrldown-cli/"+config.Version)
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+	req.Header.Set("Accept", "application/octet-stream")
+	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
