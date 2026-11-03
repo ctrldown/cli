@@ -116,42 +116,61 @@ and architecture (amd64, arm64) and replaces the current executable in place.`,
 // Prefers direct standalone executables (e.g. ctrldown_windows_amd64.exe, ctrldown_linux_amd64, ctrldown_darwin_arm64)
 // and falls back to .zip or .tar.gz archives.
 func MatchReleaseAsset(assets []githubAsset, goos, goarch string) (githubAsset, bool) {
-	osAliases := []string{strings.ToLower(goos)}
-	switch strings.ToLower(goos) {
-	case "darwin":
-		osAliases = append(osAliases, "macos", "mac", "osx")
-	case "windows":
-		osAliases = append(osAliases, "win")
-	}
-
-	archAliases := []string{strings.ToLower(goarch)}
-	switch strings.ToLower(goarch) {
-	case "amd64":
-		archAliases = append(archAliases, "x86_64", "x64")
-	case "arm64":
-		archAliases = append(archAliases, "aarch64")
-	}
+	targetOS := strings.ToLower(goos)
+	targetArch := strings.ToLower(goarch)
 
 	matchesPlatform := func(name string) bool {
 		lower := strings.ToLower(name)
 		if strings.HasSuffix(lower, ".txt") || strings.HasSuffix(lower, ".sha256") || strings.HasSuffix(lower, ".sbom") {
 			return false
 		}
-		osMatch := false
-		for _, o := range osAliases {
-			if strings.Contains(lower, o) {
-				osMatch = true
-				break
+
+		// Disambiguate OS strictly to prevent substring collisions (e.g. "darwin" contains "win")
+		switch targetOS {
+		case "windows":
+			if strings.Contains(lower, "darwin") || strings.Contains(lower, "linux") || strings.Contains(lower, "macos") {
+				return false
+			}
+			if !strings.Contains(lower, "windows") && !strings.Contains(lower, "win64") && !strings.Contains(lower, "win32") && !strings.HasSuffix(lower, ".exe") && !strings.Contains(lower, "_win_") {
+				return false
+			}
+		case "darwin":
+			if strings.Contains(lower, "windows") || strings.Contains(lower, "linux") || strings.HasSuffix(lower, ".exe") {
+				return false
+			}
+			if !strings.Contains(lower, "darwin") && !strings.Contains(lower, "macos") && !strings.Contains(lower, "mac") && !strings.Contains(lower, "osx") {
+				return false
+			}
+		case "linux":
+			if strings.Contains(lower, "windows") || strings.Contains(lower, "darwin") || strings.Contains(lower, "macos") || strings.HasSuffix(lower, ".exe") {
+				return false
+			}
+			if !strings.Contains(lower, "linux") {
+				return false
+			}
+		default:
+			if !strings.Contains(lower, targetOS) {
+				return false
 			}
 		}
+
+		// Architecture matching
 		archMatch := false
+		archAliases := []string{targetArch}
+		switch targetArch {
+		case "amd64":
+			archAliases = append(archAliases, "x86_64", "x64")
+		case "arm64":
+			archAliases = append(archAliases, "aarch64")
+		}
+
 		for _, a := range archAliases {
 			if strings.Contains(lower, a) {
 				archMatch = true
 				break
 			}
 		}
-		return osMatch && archMatch
+		return archMatch
 	}
 
 	// First pass: direct standalone binary (not .tar.gz / .zip)

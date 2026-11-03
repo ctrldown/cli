@@ -11,12 +11,12 @@ import (
 func TestMatchReleaseAssetMultiOS(t *testing.T) {
 	assets := []githubAsset{
 		{Name: "checksums.txt", BrowserDownloadURL: "https://example.com/checksums.txt"},
+		{Name: "ctrldown_darwin_amd64", BrowserDownloadURL: "https://example.com/ctrldown_darwin_amd64"},
+		{Name: "ctrldown_darwin_arm64", BrowserDownloadURL: "https://example.com/ctrldown_darwin_arm64"},
 		{Name: "ctrldown_linux_amd64", BrowserDownloadURL: "https://example.com/ctrldown_linux_amd64"},
 		{Name: "ctrldown_linux_arm64", BrowserDownloadURL: "https://example.com/ctrldown_linux_arm64"},
 		{Name: "ctrldown_windows_amd64.exe", BrowserDownloadURL: "https://example.com/ctrldown_windows_amd64.exe"},
 		{Name: "ctrldown_windows_arm64.exe", BrowserDownloadURL: "https://example.com/ctrldown_windows_arm64.exe"},
-		{Name: "ctrldown_darwin_amd64", BrowserDownloadURL: "https://example.com/ctrldown_darwin_amd64"},
-		{Name: "ctrldown_darwin_arm64", BrowserDownloadURL: "https://example.com/ctrldown_darwin_arm64"},
 	}
 
 	cases := []struct {

@@ -14,7 +14,7 @@ import (
 
 const (
 	CurrentSchemaVersion = 2
-	CurrentCLIVersion    = "0.2.1"
+	CurrentCLIVersion    = "0.2.2"
 )
 
 // Build-time variables overridden via -ldflags during release builds.
