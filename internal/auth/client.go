@@ -18,7 +18,7 @@ import (
 	"ctrldown/cli/internal/config"
 )
 
-const DefaultEdgeEndpoint = "https://api.ctrldown.dev"
+const DefaultEdgeEndpoint = "https://edge.ctrldown.com"
 
 // Credentials stores the user's Cloudflare Edge session and entitlement claims in ~/.ctrldown/credentials.yaml.
 type Credentials struct {
@@ -40,15 +40,6 @@ type RemoteCatalogItem struct {
 	Repository   string `json:"repository,omitempty"`
 	RequiredTier string `json:"required_tier"`
 	Entitled     bool   `json:"entitled"`
-}
-
-// DeviceCodeResponse is returned by POST /v1/auth/device/code on the Cloudflare Worker.
-type DeviceCodeResponse struct {
-	DeviceCode      string `json:"device_code"`
-	UserCode        string `json:"user_code"`
-	VerificationURI string `json:"verification_uri"`
-	ExpiresIn       int    `json:"expires_in"`
-	Interval        int    `json:"interval"`
 }
 
 // CredentialsPath returns ~/.ctrldown/credentials.yaml.
@@ -277,4 +268,147 @@ func extractTarGzToFs(fs afero.Fs, data []byte, destDir string) error {
 		}
 	}
 	return nil
+}
+
+// DeviceCodeResponse represents the payload returned by /v1/auth/device/code.
+type DeviceCodeResponse struct {
+	DeviceCode      string `json:"device_code"`
+	GrantID         string `json:"grant_id"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
+}
+
+// RequestDeviceGrant contacts Cloudflare Edge to initiate a browser grant pairing session.
+func RequestDeviceGrant(endpoint string) (*DeviceCodeResponse, error) {
+	if endpoint == "" {
+		endpoint = DefaultEdgeEndpoint
+	}
+	url := strings.TrimRight(endpoint, "/") + "/v1/auth/device/code"
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer([]byte("{}")))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "ctrldown-cli/"+config.Version)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initiate device grant flow: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("server returned HTTP %d while initiating auth", resp.StatusCode)
+	}
+
+	var data DeviceCodeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, fmt.Errorf("failed to decode device auth response: %w", err)
+	}
+	return &data, nil
+}
+
+// PollDeviceToken polls /v1/auth/device/token until the user approves in the browser.
+func PollDeviceToken(endpoint string, deviceCode string) (*Credentials, error) {
+	if endpoint == "" {
+		endpoint = DefaultEdgeEndpoint
+	}
+	url := strings.TrimRight(endpoint, "/") + "/v1/auth/device/token"
+	client := &http.Client{Timeout: 8 * time.Second}
+
+	body, _ := json.Marshal(map[string]string{"device_code": deviceCode})
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "ctrldown-cli/"+config.Version)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 428 { // authorization_pending
+		return nil, nil // still waiting
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("poll failed with HTTP %d", resp.StatusCode)
+	}
+
+	var data struct {
+		AccessToken  string   `json:"access_token"`
+		Email        string   `json:"email"`
+		Tier         string   `json:"tier"`
+		Entitlements []string `json:"entitlements"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+	if data.AccessToken == "" {
+		return nil, nil
+	}
+
+	return &Credentials{
+		AccessToken:  data.AccessToken,
+		Email:        data.Email,
+		Tier:         data.Tier,
+		Entitlements: data.Entitlements,
+		Endpoint:     endpoint,
+	}, nil
+}
+
+// PollUserCodeToken polls /v1/auth/device/token with a manual 6-digit user code.
+func PollUserCodeToken(endpoint string, userCode string) (*Credentials, error) {
+	if endpoint == "" {
+		endpoint = DefaultEdgeEndpoint
+	}
+	url := strings.TrimRight(endpoint, "/") + "/v1/auth/device/token"
+	client := &http.Client{Timeout: 8 * time.Second}
+
+	body, _ := json.Marshal(map[string]string{"user_code": strings.TrimSpace(userCode)})
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "ctrldown-cli/"+config.Version)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 428 { // authorization_pending
+		return nil, nil // still waiting
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("poll failed with HTTP %d", resp.StatusCode)
+	}
+
+	var data struct {
+		AccessToken  string   `json:"access_token"`
+		Email        string   `json:"email"`
+		Tier         string   `json:"tier"`
+		Entitlements []string `json:"entitlements"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+	if data.AccessToken == "" {
+		return nil, nil
+	}
+
+	return &Credentials{
+		AccessToken:  data.AccessToken,
+		Email:        data.Email,
+		Tier:         data.Tier,
+		Entitlements: data.Entitlements,
+		Endpoint:     endpoint,
+	}, nil
 }
