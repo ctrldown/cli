@@ -27,7 +27,8 @@ func NewInstallCmd(fileSystem fs.FS) *cobra.Command {
 				return err
 			}
 
-			bpConf, err := config.LoadBoilerplateConfig(fileSystem, ctrlConf.BoilerplatePath)
+			bpPath := resolveDefaultBoilerplatePath(fileSystem, ctrlConf.BoilerplatePath)
+			bpConf, err := config.LoadBoilerplateConfig(fileSystem, bpPath)
 			if err != nil {
 				return err
 			}
@@ -151,7 +152,7 @@ func NewInstallCmd(fileSystem fs.FS) *cobra.Command {
 			action := func() {
 				err = engine.InstallComponent(
 					fileSystem, 
-					ctrlConf.BoilerplatePath, 
+					bpPath, 
 					componentName, 
 					selectedTemplate, 
 					selectedMixins, 

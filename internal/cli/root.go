@@ -16,9 +16,10 @@ func NewRootCmd(fileSystem fs.FS) *cobra.Command {
 	var globals GlobalOptions
 
 	cmd := &cobra.Command{
-		Use:   "ctrldown",
-		Short: "A scaffolding and AST-manipulation engine",
-		Long:  `ctrldown is a developer-friendly CLI tool for scaffolding microservices and manipulating ASTs.`,
+		Use:     "ctrldown",
+		Version: FormatVersionString(),
+		Short:   "A scaffolding and AST-manipulation engine",
+		Long:    `ctrldown is a developer-friendly CLI tool for scaffolding monolithic monorepos, microservices, and manipulating ASTs.`,
 		// We can define persistent PreRun hooks here to initialize configuration if needed.
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Print help by default if no subcommand is given
@@ -31,7 +32,18 @@ func NewRootCmd(fileSystem fs.FS) *cobra.Command {
 
 	// Register subcommands
 	cmd.AddCommand(NewInitCmd(fileSystem))
+	cmd.AddCommand(NewCreateCmd(fileSystem))
 	cmd.AddCommand(NewInstallCmd(fileSystem))
+	cmd.AddCommand(NewIntegrateCmd(fileSystem))
+	cmd.AddCommand(NewStatusCmd(fileSystem))
+	cmd.AddCommand(NewUpgradeCmd(fileSystem))
+	cmd.AddCommand(NewListCmd(fileSystem))
+	cmd.AddCommand(NewConfigCmd(fileSystem))
+	cmd.AddCommand(NewLoginCmd(fileSystem))
+	cmd.AddCommand(NewLogoutCmd(fileSystem))
+	cmd.AddCommand(NewWhoamiCmd(fileSystem))
+	cmd.AddCommand(NewVersionCmd())
+	cmd.AddCommand(NewSelfUpdateCmd(fileSystem))
 
 	return cmd
 }

@@ -1,0 +1,54 @@
+# GoReleaser configuration for ctrldown CLI
+# Produces standalone executables directly for Linux, Windows (.exe), and macOS (amd64 & arm64)
+version: 2
+
+project_name: ctrldown
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: ctrldown
+    main: ./cmd/ctrldown
+    binary: ctrldown
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X ctrldown/cli/internal/config.Version={{.Version}}
+      - -X ctrldown/cli/internal/config.Commit={{.Commit}}
+      - -X ctrldown/cli/internal/config.BuildDate={{.Date}}
+
+archives:
+  - id: standalone-binaries
+    formats:
+      - binary
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - binary
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"

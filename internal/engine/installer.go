@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -99,12 +100,17 @@ func InstallComponent(
 }
 
 func runCommand(dir string, cmdStr string) error {
-	parts := strings.Fields(cmdStr)
-	if len(parts) == 0 {
+	trimmed := strings.TrimSpace(cmdStr)
+	if trimmed == "" {
 		return nil
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.Command("cmd", "/C", trimmed)
+	} else {
+		cmd = exec.Command("sh", "-c", trimmed)
+	}
 	cmd.Dir = dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

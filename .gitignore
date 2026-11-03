@@ -4,6 +4,15 @@
 *.dll
 *.so
 *.dylib
+ctrldown
+ctrldown_*
+
+# GoReleaser & release build outputs
+dist/
+
+# Self-update temporary swap files
+.*.old
+.*.new
 
 # Test binary, built with `go test -c`
 *.test
@@ -18,8 +27,13 @@
 go.work
 go.work.sum
 
-# env file
+# Environment & credentials
 .env
+.env.*
+credentials.yaml
 
-# Built binary for ctrldown
-ctrldown
+# OS & Editor artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

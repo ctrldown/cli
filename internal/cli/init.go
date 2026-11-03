@@ -44,16 +44,10 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 					huh.NewSelect[string]().
 						Title("Which variant do you want to create?").
 						Options(
-							huh.NewOption("Project (Currently Disabled)", "Project"),
-							huh.NewOption("Feature", "Feature"),
+							huh.NewOption("Project (Monolithic Monorepo + Go Echo)", "Project"),
+							huh.NewOption("Feature (Distributed Microfeature)", "Feature"),
 						).
-						Value(&variant).
-						Validate(func(v string) error {
-							if v == "Project" {
-								return fmt.Errorf("Project initialization is currently disabled")
-							}
-							return nil
-						}),
+						Value(&variant),
 				),
 
 				huh.NewGroup(
@@ -82,8 +76,8 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 					huh.NewSelect[string]().
 						Title("How do you want to access the Boilerplate System?").
 						Options(
-							huh.NewOption("Remote (Need Login)", "Remote"),
-							huh.NewOption("Local (For Test Purposes)", "Local"),
+							huh.NewOption("Global / Remote Sync (~/.ctrldown/boilerplates)", "Remote"),
+							huh.NewOption("Custom Local Directory", "Local"),
 						).
 						Value(&accessMethod),
 				),
@@ -95,6 +89,7 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 			}
 
 			if accessMethod == "Local" {
+				localPath = resolveDefaultBoilerplatePath(fileSystem, "")
 				localForm := huh.NewForm(
 					huh.NewGroup(
 						huh.NewInput().
@@ -116,17 +111,62 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 			}
 
 			if accessMethod == "Remote" {
-				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("#FFD700")).Render("\nRemote access is not implemented yet."))
+				resolvedBp := resolveDefaultBoilerplatePath(fileSystem, "")
+				if exists, _ := afero.DirExists(fileSystem, resolvedBp); !exists {
+					if syncErr := runConfigSync(fileSystem); syncErr != nil {
+						return fmt.Errorf("failed to sync remote boilerplates: %w", syncErr)
+					}
+					resolvedBp = resolveDefaultBoilerplatePath(fileSystem, "")
+				}
+				localPath = resolvedBp
+			}
+
+			destPath := "."
+			if targetLocation == "new_dir" {
+				destPath = title
+			}
+
+			absDestPath, pathErr := filepath.Abs(destPath)
+			if pathErr != nil {
+				absDestPath = destPath
+			}
+
+			absLocalPath, pathErr := filepath.Abs(localPath)
+			if pathErr != nil {
+				absLocalPath = localPath
+			}
+
+			if variant == "Project" {
+				action := func() {
+					_, err = engine.BootstrapProject(fileSystem, engine.ProjectOptions{
+						Title:           title,
+						DestPath:        destPath,
+						BoilerplatePath: absLocalPath,
+						LibraryPath:     resolveDefaultLibraryPath(fileSystem, ""),
+						Database:        "postgres",
+						Auth:            "ory",
+						FrontendDomains: []string{"landing", "dashboard"},
+						IncludeSharedUI: true,
+					})
+					time.Sleep(500 * time.Millisecond)
+				}
+
+				_ = spinner.New().
+					Title("Initializing monolithic project...").
+					Action(action).
+					Run()
+
+				if err != nil {
+					return fmt.Errorf("failed to initialize project: %w", err)
+				}
+
+				successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
+				fmt.Println(successStyle.Render(fmt.Sprintf("✓ Successfully initialized monolithic project '%s' in %s", title, absDestPath)))
 				return nil
 			}
 
-			if variant == "Feature" && accessMethod == "Local" {
+			if variant == "Feature" {
 				sourcePath := filepath.Join(localPath, "environments", "local")
-
-				destPath := "."
-				if targetLocation == "new_dir" {
-					destPath = title
-				}
 
 				action := func() {
 					err = engine.BootstrapFeature(fileSystem, sourcePath, destPath)
@@ -141,17 +181,6 @@ func NewInitCmd(fileSystem fs.FS) *cobra.Command {
 
 				if err != nil {
 					return fmt.Errorf("failed to initialize feature: %w", err)
-				}
-
-				absDestPath, pathErr := filepath.Abs(destPath)
-				if pathErr != nil {
-					absDestPath = destPath
-				}
-
-				// Resolve absolute path for the boilerplates to prevent "Not Found" errors in install
-				absLocalPath, pathErr := filepath.Abs(localPath)
-				if pathErr != nil {
-					absLocalPath = localPath
 				}
 
 				// Create decorated ctrl.yaml configuration file
