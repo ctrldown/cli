@@ -11,7 +11,7 @@ before:
 
 builds:
   - id: ctrldown
-    main: ./cmd/ctrldown
+    main: ./cmd/ctrldown/main.go
     binary: ctrldown
     env:
       - CGO_ENABLED=0
