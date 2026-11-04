@@ -56,7 +56,7 @@ func NewModel(sup *supervisor.Supervisor, g *graph.WorkspaceGraph, projectTitle 
 		selectedRow:   0,
 		logViewport:   vp,
 		fullscreenLog: fvp,
-		recentLogs:    make([]supervisor.LogLine, 0, 100),
+		recentLogs:    make([]supervisor.LogLine, 0, 5000),
 		logChan:       sup.UnifiedLogChannel(),
 	}
 }
@@ -99,26 +99,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.logViewport.Width = msg.Width - 4
 		m.logViewport.Height = 7
-		m.fullscreenLog.Width = msg.Width - 4
-		m.fullscreenLog.Height = msg.Height - 8
+		m.fullscreenLog.Width = msg.Width - 6
+		m.fullscreenLog.Height = msg.Height - 9
 
 	case tickMsg:
 		cmds = append(cmds, tickCmd())
 
 	case logStreamMsg:
 		m.recentLogs = append(m.recentLogs, supervisor.LogLine(msg))
-		if len(m.recentLogs) > 100 {
-			m.recentLogs = m.recentLogs[1:]
+		if len(m.recentLogs) > 5000 {
+			m.recentLogs = m.recentLogs[len(m.recentLogs)-5000:]
 		}
 
-		// Update viewports
+		// Format log line buffer
 		var b strings.Builder
 		for _, l := range m.recentLogs {
 			tag := lipgloss.NewStyle().Foreground(lipgloss.Color("#A3E635")).Render("[" + l.Source + "]")
 			b.WriteString(fmt.Sprintf("%s %s\n", tag, l.Text))
 		}
-		m.logViewport.SetContent(b.String())
+		formatted := b.String()
+		m.logViewport.SetContent(formatted)
 		m.logViewport.GotoBottom()
+
+		atBottom := m.fullscreenLog.AtBottom()
+		m.fullscreenLog.SetContent(formatted)
+		if atBottom {
+			m.fullscreenLog.GotoBottom()
+		}
 		cmds = append(cmds, waitForLogMsg(m.logChan))
 
 	case tea.KeyMsg:
@@ -130,6 +137,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "tab":
 			m.activeTab = (m.activeTab + 1) % 3
+			return m, tea.Batch(cmds...)
 
 		case "shift+tab":
 			if m.activeTab == 0 {
@@ -137,21 +145,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.activeTab--
 			}
+			return m, tea.Batch(cmds...)
 
 		case "1":
 			m.activeTab = TabFleet
 			m.selectedCol = 0
+			return m, tea.Batch(cmds...)
 		case "2":
 			m.activeTab = TabFleet
 			m.selectedCol = 1
+			return m, tea.Batch(cmds...)
 		case "3":
 			m.activeTab = TabFleet
 			m.selectedCol = 2
+			return m, tea.Batch(cmds...)
 		case "g", "p":
 			m.activeTab = TabGraph
+			return m, tea.Batch(cmds...)
 		case "f":
-			m.activeTab = TabLogs
+			if m.activeTab == TabLogs {
+				m.activeTab = TabFleet
+			} else {
+				m.activeTab = TabLogs
+				m.fullscreenLog.GotoBottom()
+			}
+			return m, tea.Batch(cmds...)
+		case "esc":
+			if m.activeTab == TabLogs {
+				m.activeTab = TabFleet
+				return m, tea.Batch(cmds...)
+			}
+		}
 
+		// When in TabLogs, delegate scrolling navigation keys to fullscreenLog
+		if m.activeTab == TabLogs {
+			var cmd tea.Cmd
+			m.fullscreenLog, cmd = m.fullscreenLog.Update(msg)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
+		switch msg.String() {
 		case "left", "h":
 			if m.activeTab == TabFleet && m.selectedCol > 0 {
 				m.selectedCol--
@@ -466,16 +502,19 @@ func (m Model) renderGraphTab() string {
 		Render(b.String())
 }
 
-// renderLogsTab renders the full-screen terminal log stream.
+// renderLogsTab renders the full-screen terminal log stream with scroll tracking.
 func (m Model) renderLogsTab() string {
 	headStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("#0F172A")).
 		Background(lipgloss.Color("#D2F862")).
-		Padding(0, 1).
-		MarginBottom(1)
+		Padding(0, 1)
 
-	title := headStyle.Render("FULLSCREEN UNIFIED LOG STREAM")
+	pct := int(m.fullscreenLog.ScrollPercent() * 100)
+	scrollInfo := fmt.Sprintf("Scroll: %d%% (%d lines) • Press [↑/↓, PgUp/PgDn] to scroll, [ESC] or [f] to return", pct, len(m.recentLogs))
+	infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#94A3B8")).MarginLeft(2)
+
+	header := lipgloss.JoinHorizontal(lipgloss.Center, headStyle.Render("FULLSCREEN UNIFIED LOG STREAM"), infoStyle.Render(scrollInfo))
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -483,7 +522,7 @@ func (m Model) renderLogsTab() string {
 		Padding(1, 1).
 		Width(m.width - 4).
 		Height(m.height - 8).
-		Render(title + "\n\n" + m.logViewport.View())
+		Render(header + "\n\n" + m.fullscreenLog.View())
 }
 
 // renderFooter renders the hotkey legend at the bottom of the screen.

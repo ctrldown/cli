@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -108,12 +109,43 @@ func findCtrlRoot(fs afero.Fs, startDir string) (string, error) {
 	return "", fmt.Errorf("ctrl.yaml not found")
 }
 
+type packageJSON struct {
+	Scripts map[string]string `json:"scripts"`
+}
+
+func readRootScripts(fs afero.Fs, rootDir string) map[string]string {
+	data, err := afero.ReadFile(fs, filepath.Join(rootDir, "package.json"))
+	if err != nil {
+		return nil
+	}
+	var pkg packageJSON
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return nil
+	}
+	return pkg.Scripts
+}
+
 // discoverServices inspects ctrl.yaml and the filesystem to configure all runnable services.
 func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDocker bool) []supervisor.ServiceConfig {
 	var list []supervisor.ServiceConfig
+	rootScripts := readRootScripts(fs, rootDir)
 
 	// 1. Column 1: Infrastructure (Docker Compose)
 	if !noDocker {
+		hasDockerUp := false
+		var dockerUpCmd, dockerDownCmd string
+		if rootScripts != nil {
+			if _, ok := rootScripts["docker:up"]; ok {
+				hasDockerUp = true
+				dockerUpCmd = "pnpm run docker:up"
+				if _, okDown := rootScripts["docker:down"]; okDown {
+					dockerDownCmd = "pnpm run docker:down"
+				} else {
+					dockerDownCmd = "docker compose stop"
+				}
+			}
+		}
+
 		var composeRelPath string
 		var envRelPath string
 
@@ -141,16 +173,9 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 			}
 		}
 
+		// Detect DB ports (Postgres 5432, MySQL 3306, Redis 6379, Mongo 27017, Ory Kratos 4433)
+		probePort := 5432
 		if composeRelPath != "" {
-			upCmd := fmt.Sprintf("docker compose -f %s up -d", composeRelPath)
-			stopCmd := fmt.Sprintf("docker compose -f %s stop", composeRelPath)
-			if envRelPath != "" {
-				upCmd = fmt.Sprintf("docker compose --env-file %s -f %s up -d", envRelPath, composeRelPath)
-				stopCmd = fmt.Sprintf("docker compose --env-file %s -f %s stop", envRelPath, composeRelPath)
-			}
-
-			// Detect DB ports (Postgres 5432, MySQL 3306, Redis 6379, Mongo 27017, Ory Kratos 4433)
-			probePort := 5432
 			if content, err := afero.ReadFile(fs, filepath.Join(rootDir, composeRelPath)); err == nil {
 				text := string(content)
 				if strings.Contains(text, "5432") {
@@ -163,18 +188,38 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 					probePort = 27017
 				}
 			}
+		}
+
+		if hasDockerUp {
+			list = append(list, supervisor.ServiceConfig{
+				Name:          "docker-infra",
+				Category:      supervisor.CategoryInfra,
+				Dir:           rootDir,
+				Command:       dockerUpCmd,
+				StopCommand:   dockerDownCmd,
+				Port:          probePort,
+				AutoRestart:   false,
+				OneShotDaemon: true,
+			})
+		} else if composeRelPath != "" {
+			upCmd := fmt.Sprintf("docker compose -f %s up -d", composeRelPath)
+			stopCmd := fmt.Sprintf("docker compose -f %s stop", composeRelPath)
+			if envRelPath != "" {
+				upCmd = fmt.Sprintf("docker compose --env-file %s -f %s up -d", envRelPath, composeRelPath)
+				stopCmd = fmt.Sprintf("docker compose --env-file %s -f %s down", envRelPath, composeRelPath)
+			}
 
 			list = append(list, supervisor.ServiceConfig{
-				Name:        "docker-infra",
-				Category:    supervisor.CategoryInfra,
-				Dir:         rootDir,
-				Command:     upCmd,
-				StopCommand: stopCmd,
-				Port:        probePort,
-				AutoRestart: false,
+				Name:          "docker-infra",
+				Category:      supervisor.CategoryInfra,
+				Dir:           rootDir,
+				Command:       upCmd,
+				StopCommand:   stopCmd,
+				Port:          probePort,
+				AutoRestart:   false,
+				OneShotDaemon: true,
 			})
 		} else if cfg.Backend != nil && cfg.Backend.Database != "" {
-			// Mock/placeholder DB indicator if no docker-compose.yml
 			list = append(list, supervisor.ServiceConfig{
 				Name:        cfg.Backend.Database + "-db",
 				Category:    supervisor.CategoryInfra,
@@ -186,25 +231,57 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 		}
 	}
 
+	registeredPaths := make(map[string]bool)
+
+	// Helper to resolve Go backend command and directory
+	resolveGoCmd := func(subDir string) (cmd string, runDir string) {
+		if rootScripts != nil {
+			if _, ok := rootScripts["api"]; ok {
+				return "pnpm run api", rootDir
+			}
+		}
+		if exists, _ := afero.Exists(fs, filepath.Join(subDir, ".air.toml")); exists {
+			return "air", subDir
+		}
+		if exists, _ := afero.Exists(fs, filepath.Join(subDir, "cmd", "api", "main.go")); exists {
+			return "go run cmd/api/main.go", subDir
+		}
+		if exists, _ := afero.Exists(fs, filepath.Join(subDir, "cmd", "main.go")); exists {
+			return "go run cmd/main.go", subDir
+		}
+		if exists, _ := afero.Exists(fs, filepath.Join(subDir, "main.go")); exists {
+			return "go run main.go", subDir
+		}
+		return "go run .", subDir
+	}
+
 	// 2. Column 2: Backend APIs and Runtimes
 	if cfg.Backend != nil && cfg.Backend.Path != "" {
 		backendDir := filepath.Join(rootDir, cfg.Backend.Path)
-		cmdStr := "go run ."
-		if exists, _ := afero.Exists(fs, filepath.Join(backendDir, ".air.toml")); exists {
-			cmdStr = "air"
-		}
+		cmdStr, workDir := resolveGoCmd(backendDir)
 
 		list = append(list, supervisor.ServiceConfig{
 			Name:        cfg.Backend.Path,
 			Category:    supervisor.CategoryBackend,
-			Dir:         backendDir,
+			Dir:         workDir,
 			Command:     cmdStr,
 			Port:        8080,
 			AutoRestart: true,
 		})
+		registeredPaths[cfg.Backend.Path] = true
+		registeredPaths[filepath.Clean(cfg.Backend.Path)] = true
+		registeredPaths["api"] = true
 	}
 
+	frontendPort := 3000
 	for _, d := range cfg.Domains {
+		cleanPath := filepath.Clean(d.Path)
+		if registeredPaths[d.Path] || registeredPaths[cleanPath] || (registeredPaths["api"] && d.Name == "api") {
+			continue
+		}
+		registeredPaths[d.Path] = true
+		registeredPaths[cleanPath] = true
+
 		domainDir := filepath.Join(rootDir, d.Path)
 		dType := strings.ToLower(d.Type)
 
@@ -219,12 +296,13 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 				AutoRestart: true,
 			})
 
-		case dType == "go-echo-api" || dType == "api":
+		case dType == "go-echo-api" || dType == "go-echo" || dType == "echo" || dType == "api":
+			cmdStr, workDir := resolveGoCmd(domainDir)
 			list = append(list, supervisor.ServiceConfig{
 				Name:        d.Name,
 				Category:    supervisor.CategoryBackend,
-				Dir:         domainDir,
-				Command:     "go run .",
+				Dir:         workDir,
+				Command:     cmdStr,
 				Port:        8080,
 				AutoRestart: true,
 			})
@@ -240,12 +318,14 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 			})
 
 		case dType == "nextjs-app" || dType == "nextjs" || dType == "frontend" || dType == "web":
+			curPort := frontendPort
+			frontendPort++
 			list = append(list, supervisor.ServiceConfig{
 				Name:        d.Name,
 				Category:    supervisor.CategoryFrontend,
 				Dir:         domainDir,
 				Command:     "pnpm run dev",
-				Port:        3000,
+				Port:        curPort,
 				AutoRestart: true,
 			})
 
@@ -253,15 +333,38 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 			// Fallback: Check if package.json has a "dev" script
 			pkgJSON := filepath.Join(domainDir, "package.json")
 			if exists, _ := afero.Exists(fs, pkgJSON); exists {
+				curPort := frontendPort
+				frontendPort++
 				list = append(list, supervisor.ServiceConfig{
 					Name:        d.Name,
 					Category:    supervisor.CategoryFrontend,
 					Dir:         domainDir,
 					Command:     "pnpm run dev",
-					Port:        3000,
+					Port:        curPort,
 					AutoRestart: true,
 				})
 			}
+		}
+	}
+
+	// Fallback if no frontend apps discovered but root has a "dev" script
+	hasFrontend := false
+	for _, s := range list {
+		if s.Category == supervisor.CategoryFrontend {
+			hasFrontend = true
+			break
+		}
+	}
+	if !hasFrontend && rootScripts != nil {
+		if _, ok := rootScripts["dev"]; ok {
+			list = append(list, supervisor.ServiceConfig{
+				Name:        "frontend",
+				Category:    supervisor.CategoryFrontend,
+				Dir:         rootDir,
+				Command:     "pnpm run dev",
+				Port:        3000,
+				AutoRestart: true,
+			})
 		}
 	}
 

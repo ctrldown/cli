@@ -91,4 +91,59 @@ services:
 	if dockerSvc.Category != supervisor.CategoryInfra {
 		t.Fatalf("expected CategoryInfra for docker")
 	}
+	if !dockerSvc.OneShotDaemon {
+		t.Fatalf("expected docker-infra to have OneShotDaemon true")
+	}
+
+	// Test Monorepo package.json scripts auto-detection (etkilibagis layout)
+	etkiliFs := afero.NewMemMapFs()
+	_ = afero.WriteFile(etkiliFs, "/monorepo/package.json", []byte(`{
+		"scripts": {
+			"docker:up": "docker compose --env-file environments/docker/.env -f environments/docker/compose.yaml up -d",
+			"docker:down": "docker compose --env-file environments/docker/.env -f environments/docker/compose.yaml down",
+			"api": "cd domains/api && go run cmd/api/main.go",
+			"dev": "turbo dev"
+		}
+	}`), 0644)
+
+	etkiliCfg := &config.CtrlConfig{
+		Project: config.ProjectConfig{
+			Title: "etkilibagis",
+		},
+		Backend: &config.BackendConfig{
+			Path: "domains/api",
+		},
+		Domains: []config.DomainEntry{
+			{Name: "api", Type: "go-echo", Path: "domains/api"},
+			{Name: "ctrlweb", Type: "nextjs", Path: "domains/ctrlweb"},
+		},
+	}
+
+	etkiliSvcs := discoverServices(etkiliFs, "/monorepo", etkiliCfg, false)
+	// Expected 3 services: docker-infra (from scripts), backend api (deduped, using pnpm run api), and ctrlweb
+	if len(etkiliSvcs) != 3 {
+		t.Fatalf("expected 3 services for etkilibagis monorepo, got %d", len(etkiliSvcs))
+	}
+
+	var dSvc, apiSvc, webAppSvc *supervisor.ServiceConfig
+	for i := range etkiliSvcs {
+		switch etkiliSvcs[i].Name {
+		case "docker-infra":
+			dSvc = &etkiliSvcs[i]
+		case "domains/api", "api":
+			apiSvc = &etkiliSvcs[i]
+		case "ctrlweb":
+			webAppSvc = &etkiliSvcs[i]
+		}
+	}
+
+	if dSvc == nil || dSvc.Command != "pnpm run docker:up" || dSvc.StopCommand != "pnpm run docker:down" {
+		t.Fatalf("expected docker scripts mapped, got %+v", dSvc)
+	}
+	if apiSvc == nil || apiSvc.Command != "pnpm run api" {
+		t.Fatalf("expected api mapped to pnpm run api, got %+v", apiSvc)
+	}
+	if webAppSvc == nil || webAppSvc.Category != supervisor.CategoryFrontend {
+		t.Fatalf("expected ctrlweb in frontend category, got %+v", webAppSvc)
+	}
 }

@@ -36,16 +36,17 @@ const (
 
 // ServiceConfig defines how a service is executed and monitored.
 type ServiceConfig struct {
-	Name        string
-	Category    ServiceCategory
-	Dir         string
-	Command     string
-	StopCommand string
-	Port        int
-	HealthURL   string
-	Env         []string
-	DependsOn   []string
-	AutoRestart bool
+	Name          string
+	Category      ServiceCategory
+	Dir           string
+	Command       string
+	StopCommand   string
+	Port          int
+	HealthURL     string
+	Env           []string
+	DependsOn     []string
+	AutoRestart   bool
+	OneShotDaemon bool
 }
 
 // Service represents a monitored, supervised background development process.
@@ -162,6 +163,10 @@ func (s *Service) Start(parentCtx context.Context) error {
 			s.Status = StatusCrashed
 			s.lastError = err
 			s.Buffer.Append(fmt.Sprintf("❌ [%s] Process exited with error: %v", s.Config.Name, err))
+		} else if s.Config.OneShotDaemon {
+			s.Status = StatusRunning
+			s.Buffer.Append(fmt.Sprintf("✓ [%s] Daemon launched in background", s.Config.Name))
+			go s.monitorDaemonPort(ctx)
 		} else {
 			s.Status = StatusStopped
 			s.Buffer.Append(fmt.Sprintf("⏹ [%s] Process exited cleanly (code 0)", s.Config.Name))
@@ -292,6 +297,33 @@ func (s *Service) runHealthProbe(ctx context.Context) {
 				s.mu.Unlock()
 				return
 			}
+		}
+	}
+}
+
+// monitorDaemonPort periodically checks if a background daemon port is still listening.
+func (s *Service) monitorDaemonPort(ctx context.Context) {
+	if s.Config.Port <= 0 {
+		return
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Config.Port), 400*time.Millisecond)
+			s.mu.Lock()
+			if err == nil {
+				conn.Close()
+				s.Status = StatusRunning
+			} else if s.Status == StatusRunning {
+				s.Status = StatusStopped
+				s.Buffer.Append(fmt.Sprintf("⚠ [%s] Daemon port %d stopped responding", s.Config.Name, s.Config.Port))
+			}
+			s.mu.Unlock()
 		}
 	}
 }
