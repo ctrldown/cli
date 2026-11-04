@@ -20,9 +20,7 @@ func NewRootCmd(fileSystem fs.FS) *cobra.Command {
 		Version: FormatVersionString(),
 		Short:   "A scaffolding and AST-manipulation engine",
 		Long:    `ctrldown is a developer-friendly CLI tool for scaffolding monolithic monorepos, microservices, and manipulating ASTs.`,
-		// We can define persistent PreRun hooks here to initialize configuration if needed.
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Print help by default if no subcommand is given
 			return cmd.Help()
 		},
 	}
@@ -33,6 +31,7 @@ func NewRootCmd(fileSystem fs.FS) *cobra.Command {
 	// Register subcommands
 	cmd.AddCommand(NewInitCmd(fileSystem))
 	cmd.AddCommand(NewCreateCmd(fileSystem))
+	cmd.AddCommand(NewDevCmd(fileSystem))
 	cmd.AddCommand(NewInstallCmd(fileSystem))
 	cmd.AddCommand(NewIntegrateCmd(fileSystem))
 	cmd.AddCommand(NewStatusCmd(fileSystem))
