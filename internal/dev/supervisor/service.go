@@ -118,6 +118,15 @@ func (s *Service) Start(parentCtx context.Context) error {
 		return err
 	}
 
+	// Pre-flight port check: warn if port is already occupied before process starts
+	if s.Config.Port > 0 && !s.Config.OneShotDaemon {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", s.Config.Port), 200*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			s.Buffer.Append(fmt.Sprintf("⚠ [%s] Port %d is already in use by another process/container!", s.Config.Name, s.Config.Port))
+		}
+	}
+
 	if err := cmd.Start(); err != nil {
 		s.setStatus(StatusCrashed, err)
 		return fmt.Errorf("failed to start %s: %w", s.Config.Name, err)
@@ -154,6 +163,7 @@ func (s *Service) Start(parentCtx context.Context) error {
 	// Wait for process termination
 	go func() {
 		err := cmd.Wait()
+		duration := time.Since(s.StartTime)
 		s.mu.Lock()
 		close(s.doneChan)
 		wasKilled := ctx.Err() != nil
@@ -174,9 +184,21 @@ func (s *Service) Start(parentCtx context.Context) error {
 		s.PID = 0
 		s.mu.Unlock()
 
-		// Optional auto-restart on unexpected crash
+		// Optional auto-restart on unexpected crash with CrashLoopBackOff protection
 		if !wasKilled && s.Config.AutoRestart {
-			time.Sleep(1 * time.Second)
+			if s.Restarts >= 3 && duration < 3*time.Second {
+				s.Buffer.Append(fmt.Sprintf("🛑 [%s] Crash loop detected (failed %d times rapidly). Auto-restart paused. Fix port conflict or press [r] to retry.", s.Config.Name, s.Restarts+1))
+				s.mu.Lock()
+				s.Status = StatusCrashed
+				s.mu.Unlock()
+				return
+			}
+
+			backoff := time.Duration(1<<s.Restarts) * 500 * time.Millisecond
+			if backoff > 5*time.Second {
+				backoff = 5 * time.Second
+			}
+			time.Sleep(backoff)
 			s.mu.Lock()
 			s.Restarts++
 			s.Status = StatusRestarting
@@ -241,6 +263,9 @@ func (s *Service) Restart(ctx context.Context) error {
 	s.Buffer.Append(fmt.Sprintf("🔄 [%s] Manual restart requested...", s.Config.Name))
 	_ = s.Stop()
 	time.Sleep(300 * time.Millisecond)
+	s.mu.Lock()
+	s.Restarts = 0
+	s.mu.Unlock()
 	return s.Start(ctx)
 }
 

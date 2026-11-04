@@ -119,6 +119,12 @@ services:
 		},
 	}
 
+	_ = afero.WriteFile(etkiliFs, "/monorepo/domains/ctrlweb/package.json", []byte(`{
+		"scripts": {
+			"dev": "next dev -p 3002"
+		}
+	}`), 0644)
+
 	etkiliSvcs := discoverServices(etkiliFs, "/monorepo", etkiliCfg, false)
 	// Expected 3 services: docker-infra (from scripts), backend api (deduped, using pnpm run api), and ctrlweb
 	if len(etkiliSvcs) != 3 {
@@ -145,5 +151,8 @@ services:
 	}
 	if webAppSvc == nil || webAppSvc.Category != supervisor.CategoryFrontend {
 		t.Fatalf("expected ctrlweb in frontend category, got %+v", webAppSvc)
+	}
+	if webAppSvc.Port != 3002 {
+		t.Fatalf("expected ctrlweb port parsed as 3002, got %d", webAppSvc.Port)
 	}
 }

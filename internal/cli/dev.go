@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"ctrldown/cli/internal/config"
@@ -111,6 +113,22 @@ func findCtrlRoot(fs afero.Fs, startDir string) (string, error) {
 
 type packageJSON struct {
 	Scripts map[string]string `json:"scripts"`
+}
+
+var portFlagRegex = regexp.MustCompile(`(?:-p|--port)\s+(\d+)|PORT=(\d+)`)
+
+func extractPortFromScript(script string) int {
+	matches := portFlagRegex.FindStringSubmatch(script)
+	if len(matches) > 1 {
+		for i := 1; i < len(matches); i++ {
+			if matches[i] != "" {
+				if p, err := strconv.Atoi(matches[i]); err == nil && p > 0 {
+					return p
+				}
+			}
+		}
+	}
+	return 0
 }
 
 func readRootScripts(fs afero.Fs, rootDir string) map[string]string {
@@ -285,14 +303,26 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 		domainDir := filepath.Join(rootDir, d.Path)
 		dType := strings.ToLower(d.Type)
 
+		domainScripts := readRootScripts(fs, domainDir)
+		scriptPort := 0
+		if domainScripts != nil {
+			if devCmd, ok := domainScripts["dev"]; ok {
+				scriptPort = extractPortFromScript(devCmd)
+			}
+		}
+
 		switch {
 		case dType == "cloudflare-worker" || dType == "worker":
+			p := 8787
+			if scriptPort > 0 {
+				p = scriptPort
+			}
 			list = append(list, supervisor.ServiceConfig{
 				Name:        d.Name,
 				Category:    supervisor.CategoryBackend,
 				Dir:         domainDir,
 				Command:     "pnpm run dev",
-				Port:        8787,
+				Port:        p,
 				AutoRestart: true,
 			})
 
@@ -308,18 +338,25 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 			})
 
 		case dType == "cloudflare-pages" || dType == "pages" || dType == "vite":
+			p := 5173
+			if scriptPort > 0 {
+				p = scriptPort
+			}
 			list = append(list, supervisor.ServiceConfig{
 				Name:        d.Name,
 				Category:    supervisor.CategoryFrontend,
 				Dir:         domainDir,
 				Command:     "pnpm run dev",
-				Port:        5173,
+				Port:        p,
 				AutoRestart: true,
 			})
 
 		case dType == "nextjs-app" || dType == "nextjs" || dType == "frontend" || dType == "web":
-			curPort := frontendPort
-			frontendPort++
+			curPort := scriptPort
+			if curPort == 0 {
+				curPort = frontendPort
+				frontendPort++
+			}
 			list = append(list, supervisor.ServiceConfig{
 				Name:        d.Name,
 				Category:    supervisor.CategoryFrontend,
@@ -333,8 +370,11 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 			// Fallback: Check if package.json has a "dev" script
 			pkgJSON := filepath.Join(domainDir, "package.json")
 			if exists, _ := afero.Exists(fs, pkgJSON); exists {
-				curPort := frontendPort
-				frontendPort++
+				curPort := scriptPort
+				if curPort == 0 {
+					curPort = frontendPort
+					frontendPort++
+				}
 				list = append(list, supervisor.ServiceConfig{
 					Name:        d.Name,
 					Category:    supervisor.CategoryFrontend,
