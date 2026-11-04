@@ -40,6 +40,7 @@ type ServiceConfig struct {
 	Category    ServiceCategory
 	Dir         string
 	Command     string
+	StopCommand string
 	Port        int
 	HealthURL   string
 	Env         []string
@@ -192,7 +193,21 @@ func (s *Service) Stop() error {
 	cmd := s.cmd
 	pg := s.processGroup
 	done := s.doneChan
+	stopCmd := s.Config.StopCommand
+	dir := s.Config.Dir
 	s.mu.Unlock()
+
+	// Execute explicit StopCommand (e.g. docker compose stop) if configured
+	if stopCmd != "" {
+		var c *exec.Cmd
+		if runtime.GOOS == "windows" {
+			c = exec.Command("cmd.exe", "/c", stopCmd)
+		} else {
+			c = exec.Command("sh", "-c", stopCmd)
+		}
+		c.Dir = dir
+		_ = c.Run()
+	}
 
 	if cmd != nil && cmd.Process != nil {
 		if pg != nil {

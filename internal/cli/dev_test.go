@@ -60,4 +60,35 @@ func TestDiscoverServicesFromCtrlConfig(t *testing.T) {
 	if webSvc == nil || webSvc.Category != supervisor.CategoryFrontend || webSvc.Port != 3000 {
 		t.Fatalf("unexpected web service config: %+v", webSvc)
 	}
+
+	// Test Docker discovery in environments/docker/compose.yaml
+	_ = afero.WriteFile(fs, "/workspace/environments/docker/compose.yaml", []byte(`
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+`), 0644)
+	_ = afero.WriteFile(fs, "/workspace/environments/docker/.env", []byte("POSTGRES_USER=test\n"), 0644)
+
+	dockerSvcs := discoverServices(fs, "/workspace", cfg, false)
+	if len(dockerSvcs) != 4 {
+		t.Fatalf("expected 4 services including docker, got %d", len(dockerSvcs))
+	}
+
+	var dockerSvc *supervisor.ServiceConfig
+	for i := range dockerSvcs {
+		if dockerSvcs[i].Name == "docker-infra" {
+			dockerSvc = &dockerSvcs[i]
+			break
+		}
+	}
+	if dockerSvc == nil {
+		t.Fatalf("expected docker-infra service to be discovered")
+	}
+	if dockerSvc.Port != 5432 {
+		t.Fatalf("expected docker-infra port to be 5432, got %d", dockerSvc.Port)
+	}
+	if dockerSvc.Category != supervisor.CategoryInfra {
+		t.Fatalf("expected CategoryInfra for docker")
+	}
 }

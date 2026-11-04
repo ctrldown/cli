@@ -3,6 +3,7 @@ package supervisor
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 	"time"
 )
@@ -93,7 +94,9 @@ func (sup *Supervisor) StartAll(parentCtx context.Context) error {
 		}
 	}
 	if len(infra) > 0 {
-		time.Sleep(1500 * time.Millisecond)
+		sup.unifiedLogCh <- LogLine{Source: "supervisor", Text: "Waiting for infrastructure & database ports to become ready..."}
+		sup.waitForInfraReady(ctx, infra, 30*time.Second)
+		sup.unifiedLogCh <- LogLine{Source: "supervisor", Text: "✓ Infrastructure is ready. Launching backend runtimes..."}
 	}
 
 	// Stage 2: Backend (Go Echo, edge workers)
@@ -154,4 +157,42 @@ func (sup *Supervisor) RestartService(name string) error {
 		ctx = context.Background()
 	}
 	return s.Restart(ctx)
+}
+
+// waitForInfraReady polls infrastructure TCP ports until ready or timeout.
+func (sup *Supervisor) waitForInfraReady(ctx context.Context, infra []*Service, maxWait time.Duration) {
+	deadline := time.Now().Add(maxWait)
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			allReady := true
+			for _, s := range infra {
+				s.mu.RLock()
+				st := s.Status
+				port := s.Config.Port
+				s.mu.RUnlock()
+
+				if port > 0 {
+					conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 250*time.Millisecond)
+					if err != nil {
+						allReady = false
+						break
+					}
+					conn.Close()
+				} else if st != StatusRunning && st != StatusStopped {
+					allReady = false
+					break
+				}
+			}
+
+			if allReady || time.Now().After(deadline) {
+				return
+			}
+		}
+	}
 }

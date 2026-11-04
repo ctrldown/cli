@@ -114,17 +114,63 @@ func discoverServices(fs afero.Fs, rootDir string, cfg *config.CtrlConfig, noDoc
 
 	// 1. Column 1: Infrastructure (Docker Compose)
 	if !noDocker {
-		dockerFile := "docker-compose.yml"
-		if exists, _ := afero.Exists(fs, filepath.Join(rootDir, "docker-compose.yaml")); exists {
-			dockerFile = "docker-compose.yaml"
+		var composeRelPath string
+		var envRelPath string
+
+		candidates := []struct {
+			compose string
+			env     string
+		}{
+			{"environments/docker/compose.yaml", "environments/docker/.env"},
+			{"environments/docker/compose.yml", "environments/docker/.env"},
+			{"environments/docker/docker-compose.yml", "environments/docker/.env"},
+			{"environments/docker/docker-compose.yaml", "environments/docker/.env"},
+			{"docker-compose.yml", ".env"},
+			{"docker-compose.yaml", ".env"},
+			{"compose.yaml", ".env"},
+			{"compose.yml", ".env"},
 		}
 
-		if exists, _ := afero.Exists(fs, filepath.Join(rootDir, dockerFile)); exists {
+		for _, c := range candidates {
+			if exists, _ := afero.Exists(fs, filepath.Join(rootDir, c.compose)); exists {
+				composeRelPath = c.compose
+				if hasEnv, _ := afero.Exists(fs, filepath.Join(rootDir, c.env)); hasEnv {
+					envRelPath = c.env
+				}
+				break
+			}
+		}
+
+		if composeRelPath != "" {
+			upCmd := fmt.Sprintf("docker compose -f %s up -d", composeRelPath)
+			stopCmd := fmt.Sprintf("docker compose -f %s stop", composeRelPath)
+			if envRelPath != "" {
+				upCmd = fmt.Sprintf("docker compose --env-file %s -f %s up -d", envRelPath, composeRelPath)
+				stopCmd = fmt.Sprintf("docker compose --env-file %s -f %s stop", envRelPath, composeRelPath)
+			}
+
+			// Detect DB ports (Postgres 5432, MySQL 3306, Redis 6379, Mongo 27017, Ory Kratos 4433)
+			probePort := 5432
+			if content, err := afero.ReadFile(fs, filepath.Join(rootDir, composeRelPath)); err == nil {
+				text := string(content)
+				if strings.Contains(text, "5432") {
+					probePort = 5432
+				} else if strings.Contains(text, "3306") {
+					probePort = 3306
+				} else if strings.Contains(text, "6379") {
+					probePort = 6379
+				} else if strings.Contains(text, "27017") {
+					probePort = 27017
+				}
+			}
+
 			list = append(list, supervisor.ServiceConfig{
-				Name:        "docker-compose",
+				Name:        "docker-infra",
 				Category:    supervisor.CategoryInfra,
 				Dir:         rootDir,
-				Command:     "docker compose up",
+				Command:     upCmd,
+				StopCommand: stopCmd,
+				Port:        probePort,
 				AutoRestart: false,
 			})
 		} else if cfg.Backend != nil && cfg.Backend.Database != "" {

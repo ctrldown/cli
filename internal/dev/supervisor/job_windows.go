@@ -109,9 +109,11 @@ func (pg *ProcessGroup) PrepareCmd(cmd *exec.Cmd) {
 	// Handled post-Start via Attach on Windows
 }
 
-// Kill terminates the entire job object tree.
+// Kill terminates the entire job object tree and executes recursive taskkill tree cleanup.
 func (pg *ProcessGroup) Kill(process *os.Process) error {
-	if process != nil {
+	if process != nil && process.Pid > 0 {
+		// Recursively terminate the process and all child processes created by it
+		_ = exec.Command("taskkill", "/F", "/T", "/PID", fmt.Sprintf("%d", process.Pid)).Run()
 		_ = process.Kill()
 	}
 	if pg != nil && pg.jobHandle != 0 {

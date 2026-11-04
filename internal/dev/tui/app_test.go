@@ -46,14 +46,14 @@ func TestTUIModelRender(t *testing.T) {
 	if !strings.Contains(view, "ctrldown dev") {
 		t.Fatalf("expected view to contain 'ctrldown dev'")
 	}
-	if !strings.Contains(view, "INFRASTRUCTURE (DOCKER)") {
-		t.Fatalf("expected view to contain 'INFRASTRUCTURE (DOCKER)'")
+	if !strings.Contains(view, "INFRASTRUCTURE") {
+		t.Fatalf("expected view to contain 'INFRASTRUCTURE'")
 	}
-	if !strings.Contains(view, "BACKEND & RUNTIMES") {
-		t.Fatalf("expected view to contain 'BACKEND & RUNTIMES'")
+	if !strings.Contains(view, "BACKEND") {
+		t.Fatalf("expected view to contain 'BACKEND'")
 	}
-	if !strings.Contains(view, "FRONTEND APPLICATIONS") {
-		t.Fatalf("expected view to contain 'FRONTEND APPLICATIONS'")
+	if !strings.Contains(view, "FRONTEND") {
+		t.Fatalf("expected view to contain 'FRONTEND'")
 	}
 
 	// Switch to Graph tab

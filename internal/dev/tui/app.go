@@ -256,19 +256,19 @@ func (m Model) renderHeader() string {
 		Foreground(lipgloss.Color("#64748B")).
 		Padding(0, 1)
 
-	tab1 := tabInactiveStyle.Render("1: Fleet (3-Column)")
+	tab1 := tabInactiveStyle.Render("1: Fleet")
 	if m.activeTab == TabFleet {
-		tab1 = tabActiveStyle.Render("1: Fleet (3-Column)")
+		tab1 = tabActiveStyle.Render("1: Fleet")
 	}
 
-	tab2 := tabInactiveStyle.Render("2: Packages & AST Graph")
+	tab2 := tabInactiveStyle.Render("2: Packages")
 	if m.activeTab == TabGraph {
-		tab2 = tabActiveStyle.Render("2: Packages & AST Graph")
+		tab2 = tabActiveStyle.Render("2: Packages")
 	}
 
-	tab3 := tabInactiveStyle.Render("3: Unified Logs")
+	tab3 := tabInactiveStyle.Render("3: Logs")
 	if m.activeTab == TabLogs {
-		tab3 = tabActiveStyle.Render("3: Unified Logs")
+		tab3 = tabActiveStyle.Render("3: Logs")
 	}
 
 	tabs := lipgloss.JoinHorizontal(lipgloss.Center, tab1, tab2, tab3)
@@ -298,7 +298,7 @@ func (m Model) renderFleetTab() string {
 
 	// 1. Column 1: Infrastructure
 	c1 := m.renderServiceColumn(
-		"INFRASTRUCTURE (DOCKER)",
+		"INFRASTRUCTURE",
 		m.supervisor.ByCategory(supervisor.CategoryInfra),
 		colWidth,
 		m.selectedCol == 0,
@@ -306,7 +306,7 @@ func (m Model) renderFleetTab() string {
 
 	// 2. Column 2: Backend & Runtimes
 	c2 := m.renderServiceColumn(
-		"BACKEND & RUNTIMES",
+		"BACKEND",
 		m.supervisor.ByCategory(supervisor.CategoryBackend),
 		colWidth,
 		m.selectedCol == 1,
@@ -314,7 +314,7 @@ func (m Model) renderFleetTab() string {
 
 	// 3. Column 3: Frontend Applications
 	c3 := m.renderServiceColumn(
-		"FRONTEND APPLICATIONS",
+		"FRONTEND",
 		m.supervisor.ByCategory(supervisor.CategoryFrontend),
 		colWidth,
 		m.selectedCol == 2,
@@ -327,7 +327,7 @@ func (m Model) renderFleetTab() string {
 	logHeader := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("#94A3B8")).
-		Render("  RECENT ACTIVITY & LOG OUTPUT ─────────────────────────────────────────────── [f: Fullscreen Logs]")
+		Render("  ACTIVITY & LOGS ───────────────────────────────────────────────────────────── [f: Fullscreen]")
 
 	logBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
